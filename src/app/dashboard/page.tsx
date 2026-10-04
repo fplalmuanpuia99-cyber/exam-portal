@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
+import { ensureProfile } from '@/lib/auth/ensure-profile';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogOut, Plus, BookOpen, Shield } from 'lucide-react';
+import { Plus, BookOpen, Shield } from 'lucide-react';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
 import { StartExamButton } from '@/components/dashboard/StartExamButton';
 
@@ -15,36 +16,66 @@ export default async function DashboardPage() {
 
   if (!user) redirect('/login');
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single();
+  const { profile, error: profileError } = await ensureProfile(supabase, user);
 
-  if (!profile) redirect('/login');
+  if (!profile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle>Profile not ready</CardTitle>
+            <CardDescription>
+              Your account exists but the database profile is missing. Run the
+              Supabase migrations, then refresh this page.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              In the Supabase SQL Editor, run{' '}
+              <code className="rounded bg-muted px-1">
+                supabase/migrations/001_initial_schema.sql
+              </code>{' '}
+              then{' '}
+              <code className="rounded bg-muted px-1">
+                supabase/migrations/002_profiles_auth_fix.sql
+              </code>
+              , then{' '}
+              <code className="rounded bg-muted px-1">
+                supabase/migrations/003_fix_rls_recursion.sql
+              </code>
+              .
+            </p>
+            {profileError && (
+              <p className="text-red-500">Details: {profileError}</p>
+            )}
+            <Button asChild className="mt-4">
+              <Link href="/login">Back to sign in</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const isInstructor =
     profile.role === 'instructor' || profile.role === 'admin';
 
-  // Published exams for students / own exams for instructors
-  let examsQuery = supabase
+  const examsQuery = supabase
     .from('exams')
-    .select('*, profiles!instructor_id(full_name)')
+    .select('id, title, description, duration_minutes, is_published, instructor_id')
     .order('created_at', { ascending: false });
 
-  if (!isInstructor) {
-    examsQuery = examsQuery.eq('is_published', true);
-  } else {
-    examsQuery = examsQuery.eq('instructor_id', user.id);
-  }
+  const scopedExamsQuery = isInstructor
+    ? examsQuery.eq('instructor_id', user.id)
+    : examsQuery.eq('is_published', true);
 
-  const { data: exams } = await examsQuery;
-
-  // Student's existing attempts
-  const { data: attempts } = await supabase
-    .from('exam_attempts')
-    .select('id, exam_id, status')
-    .eq('student_id', user.id);
+  const [{ data: exams }, { data: attempts }] = await Promise.all([
+    scopedExamsQuery,
+    supabase
+      .from('exam_attempts')
+      .select('id, exam_id, status')
+      .eq('student_id', user.id),
+  ]);
 
   const attemptMap = new Map(
     attempts?.map((a) => [a.exam_id, a]) ?? []

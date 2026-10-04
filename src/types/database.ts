@@ -54,6 +54,7 @@ export interface Database {
           max_attempts: number;
           is_published: boolean;
           security_settings: Json;
+          negative_mark_per_wrong: number;
           created_at: string;
           updated_at: string;
         };
@@ -67,6 +68,7 @@ export interface Database {
           max_attempts?: number;
           is_published?: boolean;
           security_settings?: Json;
+          negative_mark_per_wrong?: number;
         };
         Update: {
           title?: string;
@@ -77,6 +79,7 @@ export interface Database {
           max_attempts?: number;
           is_published?: boolean;
           security_settings?: Json;
+          negative_mark_per_wrong?: number;
         };
       };
       questions: {
@@ -89,6 +92,7 @@ export interface Database {
           correct_answers: Json | null;
           points: number;
           order_index: number;
+          image_url: string | null;
           created_at: string;
         };
         Insert: {
@@ -99,6 +103,7 @@ export interface Database {
           correct_answers?: Json | null;
           points?: number;
           order_index?: number;
+          image_url?: string | null;
         };
         Update: {
           question_text?: string;
@@ -107,6 +112,7 @@ export interface Database {
           correct_answers?: Json | null;
           points?: number;
           order_index?: number;
+          image_url?: string | null;
         };
       };
       exam_attempts: {
@@ -121,6 +127,7 @@ export interface Database {
           max_score: number | null;
           violation_count: number;
           server_start_time: string;
+          result_summary: Json | null;
           created_at: string;
         };
         Insert: {
@@ -135,6 +142,7 @@ export interface Database {
           score?: number | null;
           max_score?: number | null;
           violation_count?: number;
+          result_summary?: Json | null;
         };
       };
       student_answers: {
@@ -181,6 +189,14 @@ export interface Database {
       get_server_time: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      increment_violation_count: {
+        Args: { attempt_id: string };
+        Returns: undefined;
+      };
+      grade_exam_attempt: {
+        Args: { attempt_id: string };
+        Returns: Json;
       };
     };
   };

@@ -28,11 +28,14 @@ npm install
 ### 2. Supabase setup
 
 1. Create a new project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** → paste and run the entire contents of  
-   `supabase/migrations/001_initial_schema.sql`
+2. Go to **SQL Editor** → paste and run, **in order**:
+   - `supabase/migrations/001_initial_schema.sql`
+   - `supabase/migrations/002_profiles_auth_fix.sql` (backfills profiles so login → dashboard works)
+   - `supabase/migrations/003_fix_rls_recursion.sql` (fixes “infinite recursion” on `profiles` RLS)
+   - `supabase/migrations/004_exam_grading_and_features.sql` (grading RPC, negative marks, question images)
 3. Create a **private** Storage bucket named `exam-snapshots`
 4. (Optional) Add the storage policies commented at the bottom of the migration file
-5. Copy your project URL and anon key into `.env.local`:
+5. Copy your project URL and publishable key into `.env.local`:
 
 ```bash
 cp .env.example .env.local
@@ -41,7 +44,7 @@ cp .env.example .env.local
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
 ### 3. Run locally

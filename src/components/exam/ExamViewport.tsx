@@ -191,12 +191,22 @@ export function ExamViewport({
                 transition={{ duration: 0.2 }}
               >
                 <div className="mb-8 flex items-start justify-between gap-4">
-                  <h2 className="text-xl font-medium leading-relaxed tracking-tight">
-                    <span className="mr-2 text-muted-foreground">
-                      {currentIdx + 1}.
-                    </span>
-                    {current.question_text}
-                  </h2>
+                  <div className="space-y-4">
+                    <h2 className="text-xl font-medium leading-relaxed tracking-tight">
+                      <span className="mr-2 text-muted-foreground">
+                        {currentIdx + 1}.
+                      </span>
+                      {current.question_text}
+                    </h2>
+                    {current.image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={current.image_url}
+                        alt=""
+                        className="max-h-64 w-full rounded-lg border border-border object-contain"
+                      />
+                    )}
+                  </div>
                   <button
                     onClick={() => toggleFlag(current.id)}
                     className={cn(

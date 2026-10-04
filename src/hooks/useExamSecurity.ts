@@ -35,16 +35,27 @@ export function useExamSecurity({
       });
 
       if (!error) {
-        // Increment violation count
-        await supabase.rpc('increment_violation_count' as any, {
-          attempt_id: attemptId,
-        }).catch(() => {
-          // fallback if RPC not present
-          supabase
+        const { error: rpcError } = await supabase.rpc(
+          'increment_violation_count',
+          { attempt_id: attemptId }
+        );
+
+        if (rpcError) {
+          const { data: row } = await supabase
             .from('exam_attempts')
-            .update({ violation_count: undefined } as any)
-            .eq('id', attemptId);
-        });
+            .select('violation_count')
+            .eq('id', attemptId)
+            .maybeSingle();
+
+          if (row) {
+            await supabase
+              .from('exam_attempts')
+              .update({
+                violation_count: (row.violation_count ?? 0) + 1,
+              })
+              .eq('id', attemptId);
+          }
+        }
       }
 
       onViolation?.(type, details);

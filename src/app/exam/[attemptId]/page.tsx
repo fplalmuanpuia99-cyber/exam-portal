@@ -26,7 +26,7 @@ export default async function ExamPage({ params }: Props) {
   if (!attempt) notFound();
 
   if (attempt.status !== 'in_progress') {
-    redirect('/dashboard');
+    redirect(`/exam/${attemptId}/results`);
   }
 
   const { data: exam } = await supabase

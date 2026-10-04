@@ -168,6 +168,50 @@ CREATE TRIGGER exams_updated
   BEFORE UPDATE ON public.exams
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+-- Role helpers (SECURITY DEFINER — avoid RLS recursion on profiles)
+CREATE OR REPLACE FUNCTION public.current_user_role()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT role FROM public.profiles WHERE id = auth.uid();
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_instructor_or_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role IN ('admin', 'instructor')
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.current_user_role() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_instructor_or_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_user_role() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_instructor_or_admin() TO authenticated;
+
 -- ============================================================
 -- ROW LEVEL SECURITY
 -- ============================================================
@@ -189,12 +233,7 @@ CREATE POLICY "Users can update own profile"
 
 CREATE POLICY "Admins and instructors can view profiles"
   ON public.profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid() AND p.role IN ('admin', 'instructor')
-    )
-  );
+  USING (public.is_instructor_or_admin());
 
 -- Exams
 CREATE POLICY "Published exams visible to authenticated users"
@@ -202,20 +241,14 @@ CREATE POLICY "Published exams visible to authenticated users"
   USING (
     is_published = true
     OR instructor_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
+    OR public.is_admin()
   );
 
 CREATE POLICY "Instructors manage own exams"
   ON public.exams FOR ALL
   USING (
     instructor_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
+    OR public.is_admin()
   );
 
 -- Questions
@@ -228,10 +261,7 @@ CREATE POLICY "Questions visible with accessible exam"
         AND (
           e.is_published
           OR e.instructor_id = auth.uid()
-          OR EXISTS (
-            SELECT 1 FROM public.profiles p
-            WHERE p.id = auth.uid() AND p.role = 'admin'
-          )
+          OR public.is_admin()
         )
     )
   );
@@ -244,10 +274,7 @@ CREATE POLICY "Instructors manage questions of own exams"
       WHERE e.id = exam_id
         AND (
           e.instructor_id = auth.uid()
-          OR EXISTS (
-            SELECT 1 FROM public.profiles p
-            WHERE p.id = auth.uid() AND p.role = 'admin'
-          )
+          OR public.is_admin()
         )
     )
   );
@@ -264,10 +291,7 @@ CREATE POLICY "Instructors view attempts of their exams"
       SELECT 1 FROM public.exams e
       WHERE e.id = exam_id AND e.instructor_id = auth.uid()
     )
-    OR EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
+    OR public.is_admin()
   );
 
 -- Answers
@@ -290,10 +314,7 @@ CREATE POLICY "Instructors view answers of their exams"
       WHERE a.id = attempt_id
         AND (
           e.instructor_id = auth.uid()
-          OR EXISTS (
-            SELECT 1 FROM public.profiles p
-            WHERE p.id = auth.uid() AND p.role = 'admin'
-          )
+          OR public.is_admin()
         )
     )
   );
@@ -318,10 +339,7 @@ CREATE POLICY "Instructors and admins view violations"
       WHERE a.id = attempt_id
         AND (
           e.instructor_id = auth.uid()
-          OR EXISTS (
-            SELECT 1 FROM public.profiles p
-            WHERE p.id = auth.uid() AND p.role = 'admin'
-          )
+          OR public.is_admin()
         )
     )
   );

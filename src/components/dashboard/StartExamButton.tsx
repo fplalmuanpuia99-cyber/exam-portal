@@ -62,8 +62,13 @@ export function StartExamButton({
 
   if (existingAttemptId && existingStatus !== 'in_progress') {
     return (
-      <Button variant="secondary" size="sm" className="w-full" disabled>
-        Already submitted
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-full"
+        onClick={() => router.push(`/exam/${existingAttemptId}/results`)}
+      >
+        View results
       </Button>
     );
   }

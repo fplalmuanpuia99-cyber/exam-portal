@@ -16,24 +16,27 @@ export function ExamClient({ attempt, questions, examDuration }: Props) {
   const supabase = createClient();
 
   const handleSubmit = async () => {
-    // Mark as submitted
-    await supabase
-      .from('exam_attempts')
-      .update({
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-      })
-      .eq('id', attempt.id);
+    const { error: gradeError } = await supabase.rpc('grade_exam_attempt', {
+      attempt_id: attempt.id,
+    });
 
-    // Clear offline cache
+    if (gradeError) {
+      await supabase
+        .from('exam_attempts')
+        .update({
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+        })
+        .eq('id', attempt.id);
+    }
+
     localStorage.removeItem(`exam-answers-${attempt.id}`);
 
-    // Exit fullscreen if active
     if (document.fullscreenElement) {
       await document.exitFullscreen().catch(() => {});
     }
 
-    router.push('/dashboard');
+    router.push(`/exam/${attempt.id}/results`);
     router.refresh();
   };
 

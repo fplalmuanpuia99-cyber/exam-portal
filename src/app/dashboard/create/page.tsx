@@ -1,57 +1,57 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, Upload, FileSpreadsheet, Download } from 'lucide-react';
 import Link from 'next/link';
+import {
+  buildExcelTemplate,
+  parseQuestionExcel,
+} from '@/lib/exam/parseQuestionExcel';
 
 interface QuestionDraft {
   question_text: string;
   options: { id: string; text: string }[];
   correct: string;
   points: number;
+  imageFile: File | null;
+  imagePreview: string | null;
+}
+
+function emptyQuestion(): QuestionDraft {
+  return {
+    question_text: '',
+    options: [
+      { id: 'a', text: '' },
+      { id: 'b', text: '' },
+      { id: 'c', text: '' },
+      { id: 'd', text: '' },
+    ],
+    correct: 'a',
+    points: 1,
+    imageFile: null,
+    imagePreview: null,
+  };
 }
 
 export default function CreateExamPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState(60);
-  const [questions, setQuestions] = useState<QuestionDraft[]>([
-    {
-      question_text: '',
-      options: [
-        { id: 'a', text: '' },
-        { id: 'b', text: '' },
-        { id: 'c', text: '' },
-        { id: 'd', text: '' },
-      ],
-      correct: 'a',
-      points: 1,
-    },
-  ]);
+  const [negativeMarkPerWrong, setNegativeMarkPerWrong] = useState(0);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([emptyQuestion()]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importInfo, setImportInfo] = useState<string | null>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
 
   const addQuestion = () => {
-    setQuestions((q) => [
-      ...q,
-      {
-        question_text: '',
-        options: [
-          { id: 'a', text: '' },
-          { id: 'b', text: '' },
-          { id: 'c', text: '' },
-          { id: 'd', text: '' },
-        ],
-        correct: 'a',
-        points: 1,
-      },
-    ]);
+    setQuestions((q) => [...q, emptyQuestion()]);
   };
 
   const removeQuestion = (idx: number) => {
@@ -64,11 +64,7 @@ export default function CreateExamPage() {
     );
   };
 
-  const updateOption = (
-    qIdx: number,
-    optIdx: number,
-    text: string
-  ) => {
+  const updateOption = (qIdx: number, optIdx: number, text: string) => {
     setQuestions((qs) =>
       qs.map((q, i) => {
         if (i !== qIdx) return q;
@@ -79,6 +75,73 @@ export default function CreateExamPage() {
     );
   };
 
+  const onQuestionImage = (qIdx: number, file: File | null) => {
+    if (!file) return;
+    const preview = URL.createObjectURL(file);
+    setQuestions((qs) =>
+      qs.map((q, i) =>
+        i === qIdx ? { ...q, imageFile: file, imagePreview: preview } : q
+      )
+    );
+  };
+
+  const downloadTemplate = () => {
+    const buf = buildExcelTemplate();
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'exam-questions-template.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onExcelSelected = async (file: File) => {
+    setImportInfo(null);
+    setError(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const imported = parseQuestionExcel(buffer);
+      if (!imported.length) {
+        setError('No questions found in the spreadsheet.');
+        return;
+      }
+      setQuestions(
+        imported.map((row) => ({
+          ...row,
+          imageFile: null,
+          imagePreview: null,
+        }))
+      );
+      setImportInfo(`Imported ${imported.length} question(s) from Excel.`);
+    } catch {
+      setError('Could not read Excel file. Use the provided template.');
+    }
+  };
+
+  const uploadQuestionImage = async (
+    userId: string,
+    examId: string,
+    index: number,
+    file: File
+  ): Promise<string | null> => {
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const path = `${userId}/${examId}/q-${index}-${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from('question-images')
+      .upload(path, file, { upsert: true, contentType: file.type });
+
+    if (uploadError) {
+      console.error(uploadError);
+      return null;
+    }
+
+    const { data } = supabase.storage.from('question-images').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const handleCreate = async (publish: boolean) => {
     setLoading(true);
     setError(null);
@@ -86,7 +149,10 @@ export default function CreateExamPage() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     const { data: exam, error: examError } = await supabase
       .from('exams')
@@ -96,6 +162,7 @@ export default function CreateExamPage() {
         instructor_id: user.id,
         duration_minutes: duration,
         is_published: publish,
+        negative_mark_per_wrong: negativeMarkPerWrong,
       })
       .select('id')
       .single();
@@ -106,19 +173,27 @@ export default function CreateExamPage() {
       return;
     }
 
-    const questionRows = questions.map((q, i) => ({
-      exam_id: exam.id,
-      question_text: q.question_text,
-      question_type: 'mcq' as const,
-      options: q.options,
-      correct_answers: [q.correct],
-      points: q.points,
-      order_index: i,
-    }));
+    const questionRows = [];
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      let imageUrl: string | null = null;
+      if (q.imageFile) {
+        imageUrl = await uploadQuestionImage(user.id, exam.id, i, q.imageFile);
+      }
 
-    const { error: qError } = await supabase
-      .from('questions')
-      .insert(questionRows);
+      questionRows.push({
+        exam_id: exam.id,
+        question_text: q.question_text,
+        question_type: 'mcq' as const,
+        options: q.options,
+        correct_answers: [q.correct],
+        points: q.points,
+        order_index: i,
+        image_url: imageUrl,
+      });
+    }
+
+    const { error: qError } = await supabase.from('questions').insert(questionRows);
 
     if (qError) {
       setError(qError.message);
@@ -166,18 +241,78 @@ export default function CreateExamPage() {
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
-                  Duration (minutes)
-                </label>
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Duration (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    value={duration}
+                    onChange={(e) => setDuration(Number(e.target.value))}
+                    className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Negative marks (per wrong answer)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.25}
+                    value={negativeMarkPerWrong}
+                    onChange={(e) =>
+                      setNegativeMarkPerWrong(Number(e.target.value))
+                    }
+                    className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Import from Excel</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Columns: Question, Option A–D, Correct (a–d), Points. First row
+                is the header.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={downloadTemplate}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => excelInputRef.current?.click()}
+                >
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Upload .xlsx
+                </Button>
                 <input
-                  type="number"
-                  min={5}
-                  value={duration}
-                  onChange={(e) => setDuration(Number(e.target.value))}
-                  className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void onExcelSelected(f);
+                    e.target.value = '';
+                  }}
                 />
               </div>
+              {importInfo && (
+                <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                  {importInfo}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -205,6 +340,48 @@ export default function CreateExamPage() {
                   placeholder="Enter question text…"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                 />
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Points
+                    </label>
+                    <input
+                      type="number"
+                      min={0.25}
+                      step={0.25}
+                      value={q.points}
+                      onChange={(e) =>
+                        updateQuestion(qi, { points: Number(e.target.value) })
+                      }
+                      className="w-24 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Question image
+                    </label>
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50">
+                      <Upload className="h-4 w-4" />
+                      {q.imageFile ? q.imageFile.name : 'Upload image'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) =>
+                          onQuestionImage(qi, e.target.files?.[0] ?? null)
+                        }
+                      />
+                    </label>
+                  </div>
+                </div>
+                {q.imagePreview && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={q.imagePreview}
+                    alt=""
+                    className="max-h-40 rounded-md border border-border object-contain"
+                  />
+                )}
                 <div className="space-y-2">
                   {q.options.map((opt, oi) => (
                     <div key={opt.id} className="flex items-center gap-2">

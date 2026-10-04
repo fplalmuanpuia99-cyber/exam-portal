@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -15,15 +14,16 @@ export default function RegisterPage() {
   const [role, setRole] = useState<'student' | 'instructor'>('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [message, setMessage] = useState<string | null>(null);
   const supabase = createClient();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setMessage(null);
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -40,8 +40,15 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push('/dashboard');
-    router.refresh();
+    if (data.session) {
+      window.location.assign('/dashboard');
+      return;
+    }
+
+    setMessage(
+      'Account created. If email confirmation is enabled, check your inbox before signing in.'
+    );
+    setLoading(false);
   };
 
   return (
@@ -100,6 +107,11 @@ export default function RegisterPage() {
             </div>
 
             {error && <p className="text-sm text-red-500">{error}</p>}
+            {message && (
+              <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                {message}
+              </p>
+            )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
