@@ -155,17 +155,17 @@ export default function CreateExamPage() {
     }
 
     const { data: exam, error: examError } = await supabase
-      .from('exams')
-      .insert({
-        title,
-        description: description || null,
-        instructor_id: user.id,
-        duration_minutes: duration,
-        is_published: publish,
-        negative_mark_per_wrong: negativeMarkPerWrong,
-      } as any)
-      .select('id')
-      .single();
+        .from('exams')
+        .insert({
+          title,
+          description: description || null,
+          instructor_id: user.id,
+          duration_minutes: duration,
+          is_published: publish,
+          negative_mark_per_wrong: negativeMarkPerWrong,
+        } as any)
+        .select('id')
+        .single() as any;
 
     if (examError || !exam) {
       setError(examError?.message ?? 'Failed to create exam');
