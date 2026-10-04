@@ -178,7 +178,7 @@ export default function CreateExamPage() {
       const q = questions[i];
       let imageUrl: string | null = null;
       if (q.imageFile) {
-        imageUrl = await uploadQuestionImage(user.id, exam.id, i, q.imageFile);
+        imageUrl = await uploadQuestionImage(user.id, (exam as any).id, i, q.imageFile);
       }
 
       questionRows.push({
