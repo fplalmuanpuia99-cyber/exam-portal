@@ -163,7 +163,7 @@ export default function CreateExamPage() {
         duration_minutes: duration,
         is_published: publish,
         negative_mark_per_wrong: negativeMarkPerWrong,
-      })
+      } as any)
       .select('id')
       .single();
 
